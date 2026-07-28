@@ -1,6 +1,7 @@
 import { Telegraf } from 'telegraf';
 import Anthropic from '@anthropic-ai/sdk';
 import * as dotenv from 'dotenv';
+import * as http from 'http';
 
 dotenv.config();
 
@@ -13,6 +14,14 @@ if (!BOT_TOKEN) {
 if (!ANTHROPIC_API_KEY) {
   throw new Error('ANTHROPIC_API_KEY не задан в .env');
 }
+
+// Render.com автоматически задаёт PORT и RENDER_EXTERNAL_URL для веб-сервисов.
+// Если эти переменные есть — считаем, что мы в проде на Render, и работаем через webhook.
+// Если их нет (локальная разработка) — работаем через long polling, как раньше.
+const PORT = Number(process.env.PORT) || 3000;
+const WEBHOOK_DOMAIN = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'telegraf-secret-token';
+const WEBHOOK_PATH = `/webhook/${BOT_TOKEN}`;
 
 const bot = new Telegraf(BOT_TOKEN);
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
@@ -104,8 +113,41 @@ bot.catch((err, ctx) => {
   console.error(`Необработанная ошибка для ${ctx.updateType}:`, err);
 });
 
-bot.launch();
-console.log('Бот запущен');
+async function start() {
+  if (WEBHOOK_DOMAIN) {
+    // Прод-режим (например, Render Web Service, бесплатный тариф).
+    // Telegram сам стучится к нам по HTTP, поэтому процессу не нужно ничего "опрашивать".
+    const webhookCallback = await bot.createWebhook({
+      domain: WEBHOOK_DOMAIN,
+      path: WEBHOOK_PATH,
+      secret_token: WEBHOOK_SECRET,
+    });
+
+    const server = http.createServer((req, res) => {
+      if (req.url === WEBHOOK_PATH) {
+        webhookCallback(req, res);
+      } else {
+        // Простой ответ для здоровья/пинга сервиса (Render, аптайм-мониторы и т.п.)
+        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Bot is running');
+      }
+    });
+
+    server.listen(PORT, () => {
+      console.log(`Бот запущен в режиме webhook на порту ${PORT}`);
+      console.log(`Webhook URL: ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+    });
+  } else {
+    // Локальная разработка: обычный long polling.
+    await bot.launch();
+    console.log('Бот запущен в режиме long polling');
+  }
+}
+
+start().catch((err) => {
+  console.error('Не удалось запустить бота:', err);
+  process.exit(1);
+});
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
