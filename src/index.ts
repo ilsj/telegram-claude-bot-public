@@ -1,33 +1,27 @@
 import { Telegraf } from 'telegraf';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import * as dotenv from 'dotenv';
-import * as http from 'http';
 
 dotenv.config();
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// Можно переопределить модель через .env, если у выбранной закончится бесплатная квота
+// (например, поставить gemini-2.0-flash).
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 if (!BOT_TOKEN) {
   throw new Error('TELEGRAM_BOT_TOKEN не задан в .env');
 }
-if (!ANTHROPIC_API_KEY) {
-  throw new Error('ANTHROPIC_API_KEY не задан в .env');
+if (!GEMINI_API_KEY) {
+  throw new Error('GEMINI_API_KEY не задан в .env');
 }
 
-// Render.com автоматически задаёт PORT и RENDER_EXTERNAL_URL для веб-сервисов.
-// Если эти переменные есть — считаем, что мы в проде на Render, и работаем через webhook.
-// Если их нет (локальная разработка) — работаем через long polling, как раньше.
-const PORT = Number(process.env.PORT) || 3000;
-const WEBHOOK_DOMAIN = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'telegraf-secret-token';
-const WEBHOOK_PATH = `/webhook/${BOT_TOKEN}`;
-
 const bot = new Telegraf(BOT_TOKEN);
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 // Простая история диалогов в памяти: chatId -> сообщения
-type Role = 'user' | 'assistant';
+type Role = 'user' | 'model';
 interface HistoryMessage {
   role: Role;
   content: string;
@@ -53,7 +47,7 @@ function pushHistory(chatId: number, message: HistoryMessage) {
 bot.start((ctx) => {
   history.delete(ctx.chat.id);
   ctx.reply(
-    'Привет! Я бот на базе Claude. Просто напиши мне сообщение, и я отвечу.\n\n' +
+    'Привет! Я бот на базе Gemini. Просто напиши мне сообщение, и я отвечу.\n\n' +
       'Команды:\n' +
       '/reset — очистить историю диалога\n' +
       '/help — помощь'
@@ -67,7 +61,7 @@ bot.command('reset', (ctx) => {
 
 bot.help((ctx) => {
   ctx.reply(
-    'Напишите любое сообщение, и я отвечу с помощью Claude API.\n' +
+    'Напишите любое сообщение, и я отвечу с помощью Gemini API.\n' +
       'Я запоминаю последние сообщения в рамках чата (используйте /reset, чтобы начать заново).'
   );
 });
@@ -81,30 +75,25 @@ bot.on('text', async (ctx) => {
   await ctx.sendChatAction('typing');
 
   try {
-    const messages = getHistory(chatId).map((m) => ({
+    const contents = getHistory(chatId).map((m) => ({
       role: m.role,
-      content: m.content,
+      parts: [{ text: m.content }],
     }));
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages,
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents,
     });
 
-    const textBlock = response.content.find((b) => b.type === 'text');
-    const replyText =
-      textBlock && 'text' in textBlock
-        ? textBlock.text
-        : 'Извините, не удалось получить ответ.';
+    const replyText = response.text?.trim() || 'Извините, не удалось получить ответ.';
 
-    pushHistory(chatId, { role: 'assistant', content: replyText });
+    pushHistory(chatId, { role: 'model', content: replyText });
 
     await ctx.reply(replyText);
   } catch (err) {
-    console.error('Ошибка при обращении к Claude API:', err);
+    console.error('Ошибка при обращении к Gemini API:', err);
     await ctx.reply(
-      'Произошла ошибка при обращении к Claude API. Попробуйте позже или используйте /reset.'
+      'Произошла ошибка при обращении к Gemini API. Попробуйте позже или используйте /reset.'
     );
   }
 });
@@ -113,41 +102,8 @@ bot.catch((err, ctx) => {
   console.error(`Необработанная ошибка для ${ctx.updateType}:`, err);
 });
 
-async function start() {
-  if (WEBHOOK_DOMAIN) {
-    // Прод-режим (например, Render Web Service, бесплатный тариф).
-    // Telegram сам стучится к нам по HTTP, поэтому процессу не нужно ничего "опрашивать".
-    const webhookCallback = await bot.createWebhook({
-      domain: WEBHOOK_DOMAIN,
-      path: WEBHOOK_PATH,
-      secret_token: WEBHOOK_SECRET,
-    });
-
-    const server = http.createServer((req, res) => {
-      if (req.url === WEBHOOK_PATH) {
-        webhookCallback(req, res);
-      } else {
-        // Простой ответ для здоровья/пинга сервиса (Render, аптайм-мониторы и т.п.)
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('Bot is running');
-      }
-    });
-
-    server.listen(PORT, () => {
-      console.log(`Бот запущен в режиме webhook на порту ${PORT}`);
-      console.log(`Webhook URL: ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
-    });
-  } else {
-    // Локальная разработка: обычный long polling.
-    await bot.launch();
-    console.log('Бот запущен в режиме long polling');
-  }
-}
-
-start().catch((err) => {
-  console.error('Не удалось запустить бота:', err);
-  process.exit(1);
-});
+bot.launch();
+console.log('Бот запущен');
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

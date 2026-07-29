@@ -1,6 +1,6 @@
-# Telegram Claude Bot
+# Telegram Gemini Bot
 
-Telegram-бот на TypeScript (Telegraf), который отвечает пользователю с помощью Claude API. Хранит короткую историю диалога в памяти процесса (последние 20 сообщений на чат).
+Telegram-бот на TypeScript (Telegraf), который отвечает пользователю с помощью **бесплатного** Google Gemini API. Хранит короткую историю диалога в памяти процесса (последние 20 сообщений на чат).
 
 Локально бот работает через long polling. На Render (бесплатный тариф) — автоматически переключается на webhook, чтобы не требовался платный Background Worker.
 
@@ -9,7 +9,7 @@ Telegram-бот на TypeScript (Telegraf), который отвечает по
 - `/start` — приветствие, сброс истории
 - `/reset` — очистить историю диалога текущего чата
 - `/help` — краткая справка
-- Обычные текстовые сообщения обрабатываются через Claude API с учётом истории переписки
+- Обычные текстовые сообщения обрабатываются через Gemini API с учётом истории переписки
 
 ## Установка (локально)
 
@@ -26,7 +26,8 @@ cp .env.example .env
 ```
 
 - `TELEGRAM_BOT_TOKEN` — получите у [@BotFather](https://t.me/BotFather) в Telegram (команда `/newbot`)
-- `ANTHROPIC_API_KEY` — создайте в [Anthropic Console](https://console.anthropic.com/)
+- `GEMINI_API_KEY` — создайте бесплатно в [Google AI Studio](https://aistudio.google.com/apikey) (нужен только Google-аккаунт, без карты)
+- `GEMINI_MODEL` — необязательно, по умолчанию `gemini-2.5-flash`. У бесплатного тарифа небольшие лимиты (несколько запросов в минуту и в сутки); Google их периодически меняет, так что при ошибке 429 (превышен лимит) попробуйте модель `gemini-2.0-flash` или подождите сброса квоты.
 
 ## Запуск в режиме разработки
 
@@ -56,21 +57,23 @@ npm start
 3. **New + → Web Service**, подключите ваш репозиторий.
 
 4. Заполните настройки сервиса:
-   - **Runtime**: Node
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm start`
-   - **Instance Type**: Free
+
+  - **Runtime**: Node
+  - **Build Command**: `npm install && npm run build`
+  - **Start Command**: `npm start`
+  - **Instance Type**: Free
 
 5. В разделе **Environment** добавьте переменные:
-   - `TELEGRAM_BOT_TOKEN` — токен бота
-   - `ANTHROPIC_API_KEY` — ключ Anthropic API
 
-   Переменные `PORT` и `RENDER_EXTERNAL_URL` задавать не нужно — Render создаёт их автоматически для Web Service.
+  - `TELEGRAM_BOT_TOKEN` — токен бота
+  - `GEMINI_API_KEY` — ключ Gemini API
+  - `GEMINI_MODEL` — необязательно (по умолчанию `gemini-2.5-flash`)
+
+    Переменные `PORT` и `RENDER_EXTERNAL_URL` задавать не нужно — Render создаёт их автоматически для Web Service.
 
 6. Нажмите **Create Web Service**. Render соберёт и задеплоит проект. После первого успешного деплоя бот сам зарегистрирует webhook в Telegram при старте процесса (используя `RENDER_EXTERNAL_URL`).
 
 7. Проверьте бота в Telegram — напишите ему `/start`.
-
 > Также в репозитории есть `render.yaml` — можно создать сервис через [Render Blueprints](https://render.com/docs/blueprint-spec) одной кнопкой, вставив URL репозитория на странице **New + → Blueprint**.
 
 ### Если нужен более надёжный вариант (без "засыпания")
@@ -90,7 +93,7 @@ render.yaml      — конфигурация для деплоя на Render (B
 ## Идеи для развития
 
 - Персистентная история диалогов (Redis, SQLite, Postgres) вместо хранения в памяти
-- Стриминг ответов Claude (частичный вывод по мере генерации)
+- Стриминг ответов (частичный вывод по мере генерации)
 - Системный промпт с настройкой поведения/персоны бота
 - Rate limiting и защита от спама
 - Логирование и метрики использования
