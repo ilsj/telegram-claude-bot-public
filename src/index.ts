@@ -7,8 +7,8 @@ dotenv.config();
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // Можно переопределить модель через .env, если у выбранной закончится бесплатная квота
-// (например, поставить gemini-2.0-flash).
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// (например, поставить gemini-2.5-flash-lite).
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 
 if (!BOT_TOKEN) {
   throw new Error('TELEGRAM_BOT_TOKEN не задан в .env');
