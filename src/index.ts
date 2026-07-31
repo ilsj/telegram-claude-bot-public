@@ -102,8 +102,25 @@ bot.catch((err, ctx) => {
   console.error(`Необработанная ошибка для ${ctx.updateType}:`, err);
 });
 
-bot.launch();
-console.log('Бот запущен');
+const PORT = process.env.PORT ? Number(process.env.PORT) : undefined;
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
+
+if (PORT && RENDER_EXTERNAL_URL) {
+  // Render (и другие подобные хостинги) требуют, чтобы Web Service слушал $PORT.
+  // Поэтому здесь запускаем бота в режиме webhook, а не long polling.
+  const domain = RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '');
+  bot.launch({
+    webhook: {
+      domain,
+      port: PORT,
+    },
+  });
+  console.log(`Бот запущен в режиме webhook: https://${domain}, порт ${PORT}`);
+} else {
+  // Локальная разработка — обычный long polling, webhook не нужен.
+  bot.launch();
+  console.log('Бот запущен в режиме long polling');
+}
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
